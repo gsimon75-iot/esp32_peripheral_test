@@ -1,5 +1,5 @@
 #include "wifi_creds.h"
-#include "alpha.h"
+#include "ssd1306.h"
 #include "beta.h"
 
 #include <freertos/FreeRTOS.h>
@@ -14,6 +14,8 @@
 #include <esp_log.h>
 
 #include <nvs_flash.h>
+
+#include <driver/i2c.h>
 
 #include <stdio.h>
 
@@ -40,30 +42,30 @@ event_handler(void *ctx, system_event_t *event) {
 
         case SYSTEM_EVENT_STA_GOT_IP: {
             ESP_LOGI(TAG, "got ip:%s",
-                    ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+                ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
             break;
         }
 
         case SYSTEM_EVENT_AP_STACONNECTED: {
             ESP_LOGI(TAG, "station:"MACSTR" join, AID=%d",
-                    MAC2STR(event->event_info.sta_connected.mac),
-                    event->event_info.sta_connected.aid);
+                MAC2STR(event->event_info.sta_connected.mac),
+                event->event_info.sta_connected.aid);
             break;
         }
 
         case SYSTEM_EVENT_AP_STADISCONNECTED: {
             ESP_LOGI(TAG, "station:"MACSTR"leave, AID=%d",
-                    MAC2STR(event->event_info.sta_disconnected.mac),
-                    event->event_info.sta_disconnected.aid);
+                MAC2STR(event->event_info.sta_disconnected.mac),
+                event->event_info.sta_disconnected.aid);
             break;
         }
 
         case SYSTEM_EVENT_STA_DISCONNECTED: {
             ESP_LOGE(TAG, "Disconnect reason : %d", info->disconnected.reason);
             if (info->disconnected.reason == WIFI_REASON_CONNECTION_FAIL) {
-                /*Switch to 802.11 bgn mode */
-                esp_wifi_set_protocol(ESP_IF_WIFI_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+            /*Switch to 802.11 bgn mode */
+            esp_wifi_set_protocol(ESP_IF_WIFI_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
             }
             esp_wifi_connect();
             xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
@@ -99,20 +101,18 @@ wifi_init_sta() {
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
 
-
 void
 app_main()
 {
     printf("Hello world!\n");
-    yadda();
     boo();
 
     /* Print chip information */
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
     printf("This is ESP8266 chip with %d CPU cores, WiFi, silicon revision %d, %dMB %s flash\n",
-            chip_info.cores, chip_info.revision, spi_flash_get_chip_size() / (1024 * 1024),
-            (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+        chip_info.cores, chip_info.revision, spi_flash_get_chip_size() / (1024 * 1024),
+        (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -122,12 +122,16 @@ app_main()
     }
     ESP_ERROR_CHECK(ret);
     wifi_init_sta();
+    ssd1306_init(I2C_NUM_1, 23, 22);
+
 
     /*for (int i = 10; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    printf("Restarting in %d seconds...\n", i);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     printf("Restarting now.\n");
     fflush(stdout);
     esp_restart(); */
 }
+
+// vim: set sw=4 ts=4 indk= et:
