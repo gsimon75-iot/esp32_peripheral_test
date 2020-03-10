@@ -30,9 +30,7 @@ typedef enum {
     SSD1306_COLUMN_START_LOW = 0x00, // default: 0
     SSD1306_COLUMN_START_HIGH = 0x10, // default: 0
 
-    SSD1306_ADDRESSING_MODE_HORIZONTAL = 0x20,
-    SSD1306_ADDRESSING_MODE_VERTICAL = 0x21,
-    SSD1306_ADDRESSING_MODE_PAGE = 0x22, // default
+    SSD1306_ADDRESSING_MODE = 0x20, // default: 2=page mode
 
     SSD1306_COLUMN_RANGE = 0x21,    // default: 0..0x7f
     SSD1306_PAGE_RANGE = 0x22,      // default: 0..7

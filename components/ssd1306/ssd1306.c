@@ -1,6 +1,8 @@
 #include "ssd1306.h"
 #include <stdio.h>
 
+#define TEST_PATTERNS 1
+
 esp_err_t
 ssd1306_send_cmd(i2c_port_t port, uint8_t code) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -55,7 +57,6 @@ ssd1306_init(i2c_port_t port, int sda_io, int scl_io) {
         printf("i2c_driver_install failed; status=0x%02x\n", status);
         return status;
     }
-    printf("i2c ready;\n");
 
     // (Re)initialize the display
     // NOTE: Don't bother resetting values we never change. Noone else changes them either.
@@ -64,20 +65,28 @@ ssd1306_init(i2c_port_t port, int sda_io, int scl_io) {
     ssd1306_send_cmd(port, 0x1f);
     ssd1306_send_cmd(port, SSD1306_CHARGEPUMP);
     ssd1306_send_cmd(port, 0x14);
-    ssd1306_send_cmd(port, SSD1306_ADDRESSING_MODE_HORIZONTAL);
+    ssd1306_send_cmd(port, SSD1306_ADDRESSING_MODE);
+    ssd1306_send_cmd(port, 0);
     ssd1306_send_cmd(port, SSD1306_COM_PINS);
     ssd1306_send_cmd(port, 0x02);
     ssd1306_send_cmd(port, SSD1306_DISPLAY_ON);
-    printf("ssd1306 ready;\n");
+
+#ifdef TEST_PATTERNS
 
     // Binary pattern to page 0 and 2 (== rows 0..15)
+    ssd1306_send_cmd(port, SSD1306_COLUMN_RANGE);
+    ssd1306_send_cmd(port, 0x00);
+    ssd1306_send_cmd(port, 0x7f);
+    ssd1306_send_cmd(port, SSD1306_PAGE_RANGE);
+    ssd1306_send_cmd(port, 0x00);
+    ssd1306_send_cmd(port, 0x03);
     for (uint16_t i = 0; i < 0x100; ++i) {
         ssd1306_send_data(port, i);
     }
 
     // Binary pattern to the bottom-right 16x16 pixels
     // columns 0x70..0x7f, rows 0x10..0x1f == pages 2..3
-    /*ssd1306_send_cmd(port, SSD1306_COLUMN_RANGE);
+    ssd1306_send_cmd(port, SSD1306_COLUMN_RANGE);
     ssd1306_send_cmd(port, 0x70);
     ssd1306_send_cmd(port, 0x7f);
     ssd1306_send_cmd(port, SSD1306_PAGE_RANGE);
@@ -85,8 +94,17 @@ ssd1306_init(i2c_port_t port, int sda_io, int scl_io) {
     ssd1306_send_cmd(port, 0x03);
     for (uint8_t i = 0; i < 0x20; ++i) {
         ssd1306_send_data(port, i);
-    }*/
+    }
+
+#else // TEST_PATTERNS
+
+    for (uint16_t i = 0; i < 128 * 32 / 8; ++i) {
+        ssd1306_send_data(port, 0);
+    }
+
+#endif // TEST_PATTERNS
 
     return ESP_OK;
 }
 
+// vim: set sw=4 ts=4 indk= et si:
