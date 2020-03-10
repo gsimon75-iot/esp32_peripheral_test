@@ -61,7 +61,11 @@ typedef enum {
 } ssd1306_cmd_t;
 
 esp_err_t ssd1306_init(i2c_port_t port, int sda_io, int scl_io);
-esp_err_t ssd1306_send_cmd(i2c_port_t port, uint8_t code);
-esp_err_t ssd1306_send_data(i2c_port_t port, uint8_t value);
+esp_err_t ssd1306_send_cmd_byte(i2c_port_t port, uint8_t code);
+esp_err_t ssd1306_send_data_byte(i2c_port_t port, uint8_t value);
+esp_err_t ssd1306_send_data(i2c_port_t port, uint8_t* data, uint16_t n);
+esp_err_t ssd1306_memset(i2c_port_t port, uint8_t value, uint16_t n);
+esp_err_t ssd1306_set_range(i2c_port_t port, uint8_t col_min, uint8_t col_max, uint8_t page_min, uint8_t page_max);
 
 #endif // SSD1306_H
+// vim: set sw=4 ts=4 indk= et si:
