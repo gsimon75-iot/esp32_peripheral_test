@@ -100,6 +100,11 @@ ssd1306_init(i2c_port_t port, int sda_io, int scl_io) {
         SSD1306_CHARGEPUMP, 0x14,
         SSD1306_ADDRESSING_MODE, 0,
         SSD1306_COM_PINS, 0x02,
+        SSD1306_DISPLAY_RAM,
+        SSD1306_DISPLAY_NORMAL,
+        SSD1306_CONTRAST, 0x7f,
+        SSD1306_NO_HORIZONTAL_FLIP,
+        SSD1306_VSCAN_INC,
         SSD1306_DISPLAY_ON,
     };
 

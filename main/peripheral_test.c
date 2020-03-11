@@ -166,7 +166,7 @@ app_main()
         uint8_t tempBuffer[WIFI_QR_SIZE];
         //
         // Encoding wifi parameters on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#wi-fi-network-config-android-ios-11
-        size_t input_length = snprintf((char*)tempBuffer, WIFI_QR_SIZE, "WIFI:S:%s:T:WPA;P:%s;;", AP_SSID, AP_PASSWORD);
+        size_t input_length = snprintf((char*)tempBuffer, WIFI_QR_SIZE, "WIFI:S:%s;T:WPA;P:%s;;", AP_SSID, AP_PASSWORD);
         bool qr_status = qrcodegen_encodeBinary(tempBuffer, input_length, qrcode, qrcodegen_Ecc_LOW, WIFI_QR_VERSION, WIFI_QR_VERSION, qrcodegen_Mask_AUTO, true);
         printf("QR code generation done; status=%d\n", qr_status);
     }
@@ -182,9 +182,20 @@ app_main()
         printf("\n");
     }
 
-    ssd1306_set_range(I2C_NUM_1, 0, 28, 0, 3);
-    ssd1306_send_data(I2C_NUM_1, qrcode, WIFI_QR_SIZE);
+    ssd1306_send_cmd_byte(I2C_NUM_1, SSD1306_DISPLAY_INVERSE);
+    ssd1306_set_range(I2C_NUM_1, 0, 63, 0, 3);
+    for (int y = 0; y < 32; y += 8) {
+        for (int x = 0; x < 64; ++x) {
+            uint8_t v = 0;
+            for (uint8_t yb = 0; yb < 8; ++yb) {
+                if (qrcodegen_getModule(qrcode, x - 16, y + yb - 1)) {
+                    v |= 1 << yb;
+                }
 
+            }
+            ssd1306_send_data_byte(I2C_NUM_1, v);
+        }
+    }
 
     /*for (int i = 10; i >= 0; i--) {
     printf("Restarting in %d seconds...\n", i);
