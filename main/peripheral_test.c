@@ -1,6 +1,6 @@
 #include "wifi_creds.h"
 #include "ssd1306.h"
-#include "beta.h"
+#include "qrcodegen.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -18,6 +18,7 @@
 #include <driver/i2c.h>
 
 #include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "simple wifi";
 extern const uint8_t something_dat_start[] asm("_binary_something_dat_start");
@@ -101,11 +102,44 @@ wifi_init_sta() {
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
 
+#define AP_SSID     "yadda"
+#define AP_PASSWORD "qwerasdfzxcv"
+
+void
+wifi_init_ap() {
+    wifi_event_group = xEventGroupCreate();
+
+    tcpip_adapter_init();
+    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL) );
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = AP_SSID,
+            .ssid_len = strlen(AP_SSID),
+            .password = AP_PASSWORD,
+            .max_connection = 1,
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_ap finished.");
+}
+
+// QR-Code versions, sizes and information capacity: https://www.qrcode.com/en/about/version.html
+// Version 3 = 29 x 29, binary info cap by ecc mode: L:53, M:42, Q:32 bytes
+#define WIFI_QR_VERSION 3
+#define WIFI_QR_SIZE (qrcodegen_BUFFER_LEN_FOR_VERSION(WIFI_QR_VERSION))
+
 void
 app_main()
 {
     printf("Hello world!\n");
-    boo();
 
     /* Print chip information */
     esp_chip_info_t chip_info;
@@ -121,8 +155,35 @@ app_main()
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    wifi_init_sta();
     ssd1306_init(I2C_NUM_1, 23, 22);
+
+    //wifi_init_sta();
+    wifi_init_ap();
+
+
+    uint8_t qrcode[WIFI_QR_SIZE];
+    {
+        uint8_t tempBuffer[WIFI_QR_SIZE];
+        //
+        // Encoding wifi parameters on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#wi-fi-network-config-android-ios-11
+        size_t input_length = snprintf((char*)tempBuffer, WIFI_QR_SIZE, "WIFI:S:%s:T:WPA;P:%s;;", AP_SSID, AP_PASSWORD);
+        bool qr_status = qrcodegen_encodeBinary(tempBuffer, input_length, qrcode, qrcodegen_Ecc_LOW, WIFI_QR_VERSION, WIFI_QR_VERSION, qrcodegen_Mask_AUTO, true);
+        printf("QR code generation done; status=%d\n", qr_status);
+    }
+
+    printf("QR code buffer; size=%d\n", WIFI_QR_SIZE);
+    uint8_t *p = qrcode;
+    for (int i = 0; i < WIFI_QR_SIZE; i += 0x10) {
+        printf("%04x:", i);
+        for (int j = 0; (j < 0x10) && ((i+j) < WIFI_QR_SIZE); ++j) {
+            printf(" %02x", *p);
+            ++p;
+        }
+        printf("\n");
+    }
+
+    ssd1306_set_range(I2C_NUM_1, 0, 28, 0, 3);
+    ssd1306_send_data(I2C_NUM_1, qrcode, WIFI_QR_SIZE);
 
 
     /*for (int i = 10; i >= 0; i--) {

@@ -5,7 +5,7 @@ add_definitions(
     -Wfatal-errors
     )
 
-set(EXTRA_COMPONENT_DIRS components/ssd1306 components/beta)
+set(EXTRA_COMPONENT_DIRS components/ssd1306 components/qrcodegen)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(peripheral-test)

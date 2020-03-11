@@ -1,7 +1,7 @@
 #include "ssd1306.h"
 #include <stdio.h>
 
-#define TEST_PATTERNS 1
+//#define TEST_PATTERNS 1
 
 esp_err_t
 ssd1306_send_cmd_byte(i2c_port_t port, uint8_t code) {
