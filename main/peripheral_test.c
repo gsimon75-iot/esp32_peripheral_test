@@ -21,23 +21,23 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *TAG = "simple wifi";
+#define SSD1306_I2C I2C_NUM_1
+
+static const char *TAG = "ptest";
 extern const uint8_t something_dat_start[] asm("_binary_something_dat_start");
 extern const uint8_t something_dat_end[] asm("_binary_something_dat_end");
 
-/* FreeRTOS event group to signal when we are connected*/
+// FreeRTOS event group to signal when we are connected
 static EventGroupHandle_t wifi_event_group;
 
-/* The event group allows multiple bits for each event, but we only care about one event - are we connected to the AP with an IP? */
+// The event group allows multiple bits for each event, but we only care about one event - are we connected to the AP with an IP?
 const int WIFI_CONNECTED_BIT = BIT0;
-
-#define AP_SSID     "yadda"
-#define AP_PASSWORD "qwerasdfzxcv"
 
 // QR-Code versions, sizes and information capacity: https://www.qrcode.com/en/about/version.html
 // Version 3 = 29 x 29, binary info cap by ecc mode: L:53, M:42, Q:32 bytes
 #define WIFI_QR_VERSION 3
 #define WIFI_QR_SIZE (qrcodegen_BUFFER_LEN_FOR_VERSION(WIFI_QR_VERSION))
+
 
 void
 lcd_putchar(int col, int row, char c) {
@@ -45,9 +45,10 @@ lcd_putchar(int col, int row, char c) {
         c = 0x20;
     }
     col *= 6;
-    ssd1306_set_range(I2C_NUM_1, col, col + 5, row, row);
-    ssd1306_send_data(I2C_NUM_1, &font6x8[6 * (c - 0x20)], 6);
+    ssd1306_set_range(SSD1306_I2C, col, col + 5, row, row);
+    ssd1306_send_data(SSD1306_I2C, &font6x8[6 * (c - 0x20)], 6);
 }
+
 
 void
 lcd_puts(int col, int row, const char *s) {
@@ -55,7 +56,7 @@ lcd_puts(int col, int row, const char *s) {
         return;
     }
     col *= 6;
-    ssd1306_set_range(I2C_NUM_1, col, 127, row, row);
+    ssd1306_set_range(SSD1306_I2C, col, 127, row, row);
     static uint8_t send_data_cmd[] = {
         0x78, 0x40,
     };
@@ -73,25 +74,21 @@ lcd_puts(int col, int row, const char *s) {
         ++s;
     }
     i2c_master_stop(cmd);
-    i2c_master_cmd_begin(I2C_NUM_1, cmd, 1000);
+    i2c_master_cmd_begin(SSD1306_I2C, cmd, 1000);
     i2c_cmd_link_delete(cmd);
 }
 
-void
-display_ap_info(void) {
 
+bool
+lcd_QR(uint8_t *tempBuffer, size_t input_length) {
     uint8_t qrcode[WIFI_QR_SIZE];
-    {
-        uint8_t tempBuffer[WIFI_QR_SIZE];
-        // Encoding wifi parameters on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#wi-fi-network-config-android-ios-11
-        size_t input_length = snprintf((char*)tempBuffer, WIFI_QR_SIZE, "WIFI:S:%s;T:WPA;P:%s;;", AP_SSID, AP_PASSWORD);
-        bool qr_status = qrcodegen_encodeBinary(tempBuffer, input_length, qrcode, qrcodegen_Ecc_LOW, WIFI_QR_VERSION, WIFI_QR_VERSION, qrcodegen_Mask_AUTO, true);
-        ESP_LOGI(TAG, "QR code generation done; status=%d, size=%d\n", qr_status, WIFI_QR_SIZE);
-    }
-    ESP_LOG_BUFFER_HEXDUMP(TAG, qrcode, WIFI_QR_SIZE, ESP_LOG_DEBUG);
 
-    ssd1306_send_cmd_byte(I2C_NUM_1, SSD1306_DISPLAY_INVERSE);
-    ssd1306_set_range(I2C_NUM_1, 0, 47, 0, 3);
+    if (!qrcodegen_encodeBinary(tempBuffer, input_length, qrcode, qrcodegen_Ecc_LOW, WIFI_QR_VERSION, WIFI_QR_VERSION, qrcodegen_Mask_AUTO, true)) {
+        ESP_LOGE(TAG, "Failed to generate QR code;");
+        return false;
+    }
+    //ESP_LOG_BUFFER_HEXDUMP(TAG, qrcode, WIFI_QR_SIZE, ESP_LOG_DEBUG);
+    ssd1306_set_range(SSD1306_I2C, 0, 47, 0, 3);
     for (int y = 0; y < 32; y += 8) {
         for (int x = 0; x < 48; ++x) {
             uint8_t v = 0;
@@ -101,27 +98,56 @@ display_ap_info(void) {
                 }
 
             }
-            ssd1306_send_data_byte(I2C_NUM_1, v);
+            ssd1306_send_data_byte(SSD1306_I2C, v);
         }
     }
+    return true;
+}
+
+
+void
+display_wifi_conn(void) {
+    ssd1306_clear(SSD1306_I2C);
+    ssd1306_send_cmd_byte(SSD1306_I2C, SSD1306_DISPLAY_INVERSE);
+
+    lcd_puts(8, 0, "SSID:");
+    lcd_puts(8, 1, AP_SSID);
+    lcd_puts(8, 2, "Password:");
+    lcd_puts(8, 3, AP_PASSWORD);
 
     {
-        char linebuf[32];
-        snprintf(linebuf, sizeof(linebuf), "SSID: %s", AP_SSID);
-        lcd_puts(8, 0, linebuf);
-        lcd_puts(8, 1, "Password:");
-        lcd_puts(8, 2, AP_PASSWORD);
+        // Encoding wifi parameters on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#wi-fi-network-config-android-ios-11
+        uint8_t tempBuffer[WIFI_QR_SIZE];
+        size_t input_length = snprintf((char*)tempBuffer, WIFI_QR_SIZE, "WIFI:S:%s;T:WPA;P:%s;;", AP_SSID, AP_PASSWORD);
+        lcd_QR(tempBuffer, input_length);
     }
 }
 
-void
-display_conn_info(void) {
-    ssd1306_send_cmd_byte(I2C_NUM_1, SSD1306_DISPLAY_NORMAL);
-    ssd1306_set_range(I2C_NUM_1, 0, 127, 0, 3);
-    ssd1306_memset(I2C_NUM_1, 0, 128 * 4);
-    lcd_puts(0, 0, "Connected");
-}
 
+void
+display_portal_url(void) {
+    char str_ip[16];
+
+    ssd1306_clear(SSD1306_I2C);
+    ssd1306_send_cmd_byte(SSD1306_I2C, SSD1306_DISPLAY_INVERSE);
+
+    {
+        tcpip_adapter_ip_info_t ap_info;
+        tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info);
+        ip4addr_ntoa_r(&ap_info.ip, str_ip, sizeof(str_ip));
+    }
+
+    lcd_puts(8, 0, "https://");
+    lcd_puts(8, 1, str_ip);
+
+    {
+        // Encoding URLs on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#url
+        uint8_t tempBuffer[WIFI_QR_SIZE];
+        size_t input_length = snprintf((char*)tempBuffer, sizeof(tempBuffer), "https://%s", str_ip);
+        lcd_QR(tempBuffer, input_length);
+    }
+
+}
 
 
 static esp_err_t
@@ -152,21 +178,29 @@ event_handler(void *ctx, system_event_t *event) {
         }
 
         case SYSTEM_EVENT_AP_START: {
-            ESP_LOGI(TAG, "AP started;");
+            tcpip_adapter_ip_info_t ap_info;
+            char str_ip[16], str_netmask[16], str_gw[16];
+
+            tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info);
+            ip4addr_ntoa_r(&ap_info.ip, str_ip, sizeof(str_ip));
+            ip4addr_ntoa_r(&ap_info.netmask, str_netmask, sizeof(str_netmask));
+            ip4addr_ntoa_r(&ap_info.gw, str_gw, sizeof(str_gw));
+            ESP_LOGI(TAG, "AP started; ip=%s, netmask=%s, gw=%s", str_ip, str_netmask, str_gw);
+            display_wifi_conn();
             break;
         }
 
         case SYSTEM_EVENT_AP_STACONNECTED: {
             ESP_LOGI(TAG, "station:"MACSTR" join, AID=%d", MAC2STR(event->event_info.sta_connected.mac), event->event_info.sta_connected.aid);
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            display_conn_info();
+            display_portal_url();
             break;
         }
 
         case SYSTEM_EVENT_AP_STADISCONNECTED: {
             ESP_LOGI(TAG, "station:"MACSTR" leave, AID=%d", MAC2STR(event->event_info.sta_disconnected.mac), event->event_info.sta_disconnected.aid);
             xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            display_ap_info();
+            display_wifi_conn();
             break;
         }
 
@@ -176,18 +210,6 @@ event_handler(void *ctx, system_event_t *event) {
     return ESP_OK;
 }
 
-#if 0
-I (32863) wifi: new:<1,0>, old:<1,0>, ap:<1,1>, sta:<255,255>, prof:1
-I (32863) wifi: station: 3c:17:f2:11:d9:77 join, AID=1, bgn, 20
-
-I (32893) simple wifi: station:3c:17:f2:11:d9:77 join, AID=1
-I (33833) tcpip_adapter: softAP assign IP to station,IP is: 192.168.4.2
-
-I (49513) wifi: station: 3c:17:f2:11:d9:77 leave, AID = 1, bss_flags is 134259, bss:0x3ffb9c38
-I (49513) wifi: new:<1,0>, old:<1,0>, ap:<1,1>, sta:<255,255>, prof:1
-
-I (49513) simple wifi: station:3c:17:f2:11:d9:77 leave, AID=1
-#endif
 
 void
 wifi_init_sta() {
@@ -206,6 +228,7 @@ wifi_init_sta() {
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
+
 
 void
 wifi_init_ap() {
@@ -246,17 +269,25 @@ app_main()
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    ssd1306_init(I2C_NUM_1, 23, 22);
+    ssd1306_init(SSD1306_I2C, 23, 22);
 
     wifi_event_group = xEventGroupCreate();
 
     tcpip_adapter_init();
+    {
+        tcpip_adapter_ip_info_t ap_info = {
+            .ip = { .addr = 0x0100000aUL },         // 10.0.0.1
+            .netmask = { . addr = IP_CLASSA_NET },  // 255.0.0.0
+            .gw = { .addr = IPADDR_NONE },
+        };
+        ESP_ERROR_CHECK(tcpip_adapter_dhcps_stop(TCPIP_ADAPTER_IF_AP));
+        ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info));
+        ESP_ERROR_CHECK(tcpip_adapter_dhcps_start(TCPIP_ADAPTER_IF_AP));
+    }
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
 
     //wifi_init_sta();
     wifi_init_ap();
-    display_ap_info();
-
 
     /*for (int i = 10; i >= 0; i--) {
     ESP_LOGD(TAG, "Restarting in %d seconds...\n", i);
@@ -266,5 +297,6 @@ app_main()
     fflush(stdout);
     esp_restart(); */
 }
+
 
 // vim: set sw=4 ts=4 indk= et si:

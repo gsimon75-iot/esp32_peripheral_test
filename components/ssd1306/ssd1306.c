@@ -92,6 +92,15 @@ ssd1306_set_range(i2c_port_t port, uint8_t col_min, uint8_t col_max, uint8_t pag
 }
 
 esp_err_t
+ssd1306_clear(i2c_port_t port) {
+    esp_err_t status = ssd1306_set_range(port, 0, 127, 0, 3);
+    if (status != ESP_OK) {
+        return status;
+    }
+    return ssd1306_memset(port, 0, 128 * 4);
+}
+
+esp_err_t
 ssd1306_init(i2c_port_t port, int sda_io, int scl_io) {
     static uint8_t init_cmd[] = {
         0x78, 0x00,
