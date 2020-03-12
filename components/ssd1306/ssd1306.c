@@ -32,14 +32,14 @@ ssd1306_send_data_byte(i2c_port_t port, uint8_t value) {
 }
 
 esp_err_t
-ssd1306_send_data(i2c_port_t port, uint8_t* data, uint16_t n) {
+ssd1306_send_data(i2c_port_t port, const uint8_t* data, uint16_t n) {
     static uint8_t send_data_cmd[] = {
         0x78, 0x40,
     };
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write(cmd, send_data_cmd, sizeof(send_data_cmd), true);
-    i2c_master_write(cmd, data, n, true);
+    i2c_master_write(cmd, (uint8_t*)data, n, true);
     i2c_master_stop(cmd);
     esp_err_t status = i2c_master_cmd_begin(port, cmd, 1000);
     i2c_cmd_link_delete(cmd);
