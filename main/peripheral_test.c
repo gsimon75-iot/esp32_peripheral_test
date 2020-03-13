@@ -13,6 +13,7 @@
 #include <esp_wifi.h>
 #include <esp_event_loop.h>
 #include <esp_log.h>
+#include <esp_https_server.h>
 
 #include <nvs_flash.h>
 
@@ -24,8 +25,11 @@
 #define SSD1306_I2C I2C_NUM_1
 
 static const char *TAG = "ptest";
-extern const uint8_t something_dat_start[] asm("_binary_something_dat_start");
-extern const uint8_t something_dat_end[] asm("_binary_something_dat_end");
+
+extern const uint8_t private_key_start[] asm("_binary_private_key_start");
+extern const uint8_t private_key_end[] asm("_binary_private_key_end");
+extern const uint8_t server_crt_start[] asm("_binary_server_crt_start");
+extern const uint8_t server_crt_end[] asm("_binary_server_crt_end");
 
 // FreeRTOS event group to signal when we are connected
 static EventGroupHandle_t wifi_event_group;
@@ -151,6 +155,47 @@ display_portal_url(void) {
 
 
 static esp_err_t
+root_get_handler(httpd_req_t *req) {
+    ESP_LOGD(TAG, "root_get_handler;");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, "<h1>Hello Secure World!</h1>", -1); // -1 = use strlen()
+    return ESP_OK;
+}
+
+
+static const
+httpd_uri_t root = {
+    .uri       = "/",
+    .method    = HTTP_GET,
+    .handler   = root_get_handler
+};
+
+
+static httpd_handle_t
+start_webserver(void) {
+    httpd_handle_t server = NULL;
+
+    ESP_LOGI(TAG, "Starting https server;");
+
+    httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
+    conf.cacert_pem = server_crt_start;
+    conf.cacert_len = server_crt_end - server_crt_start;
+    conf.prvtkey_pem = private_key_start;
+    conf.prvtkey_len = private_key_end - private_key_start;
+
+    esp_err_t ret = httpd_ssl_start(&server, &conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error starting server; status=%d", ret);
+        return NULL;
+    }
+
+    httpd_register_uri_handler(server, &root);
+    return server;
+}
+
+httpd_handle_t* https_server = NULL;
+
+static esp_err_t
 event_handler(void *ctx, system_event_t *event) {
     /* For accessing reason codes in case of disconnection */
     system_event_info_t *info = &event->event_info;
@@ -187,6 +232,9 @@ event_handler(void *ctx, system_event_t *event) {
             ip4addr_ntoa_r(&ap_info.gw, str_gw, sizeof(str_gw));
             ESP_LOGI(TAG, "AP started; ip=%s, netmask=%s, gw=%s", str_ip, str_netmask, str_gw);
             display_wifi_conn();
+            if (https_server == NULL) {
+                https_server = start_webserver();
+            }
             break;
         }
 
