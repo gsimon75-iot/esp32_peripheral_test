@@ -43,6 +43,10 @@ const int WIFI_CONNECTED_BIT = BIT0;
 #define WIFI_QR_SIZE (qrcodegen_BUFFER_LEN_FOR_VERSION(WIFI_QR_VERSION))
 
 
+/******************************************************************************
+ * LCD operations
+ */
+
 void
 lcd_putchar(int col, int row, char c) {
     if ((c < 0x20) || (c & 0x80)) {
@@ -109,6 +113,10 @@ lcd_QR(uint8_t *tempBuffer, size_t input_length) {
 }
 
 
+/******************************************************************************
+ * Show some info on the display
+ */
+
 void
 display_wifi_conn(void) {
     ssd1306_clear(SSD1306_I2C);
@@ -154,6 +162,10 @@ display_portal_url(void) {
 }
 
 
+/******************************************************************************
+ * HTTPS Server details
+ */
+
 static esp_err_t
 root_get_handler(httpd_req_t *req) {
     ESP_LOGD(TAG, "root_get_handler;");
@@ -195,69 +207,73 @@ start_webserver(void) {
 
 httpd_handle_t* https_server = NULL;
 
-static esp_err_t
-event_handler(void *ctx, system_event_t *event) {
-    /* For accessing reason codes in case of disconnection */
-    system_event_info_t *info = &event->event_info;
-    
-    switch(event->event_id) {
-        case SYSTEM_EVENT_STA_START: {
-            esp_wifi_connect();
-            break;
-        }
 
-        case SYSTEM_EVENT_STA_GOT_IP: {
-            ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            break;
-        }
+/*******************************************************************************
+ * Event handlers
+ */
 
-        case SYSTEM_EVENT_STA_DISCONNECTED: {
-            ESP_LOGE(TAG, "Disconnect reason : %d", info->disconnected.reason);
-            if (info->disconnected.reason == WIFI_REASON_CONNECTION_FAIL) {
-                esp_wifi_set_protocol(ESP_IF_WIFI_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N); // switch to 802.11 bgn mode
-            }
-            esp_wifi_connect();
-            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            break;
-        }
-
-        case SYSTEM_EVENT_AP_START: {
-            tcpip_adapter_ip_info_t ap_info;
-            char str_ip[16], str_netmask[16], str_gw[16];
-
-            tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info);
-            ip4addr_ntoa_r(&ap_info.ip, str_ip, sizeof(str_ip));
-            ip4addr_ntoa_r(&ap_info.netmask, str_netmask, sizeof(str_netmask));
-            ip4addr_ntoa_r(&ap_info.gw, str_gw, sizeof(str_gw));
-            ESP_LOGI(TAG, "AP started; ip=%s, netmask=%s, gw=%s", str_ip, str_netmask, str_gw);
-            display_wifi_conn();
-            if (https_server == NULL) {
-                https_server = start_webserver();
-            }
-            break;
-        }
-
-        case SYSTEM_EVENT_AP_STACONNECTED: {
-            ESP_LOGI(TAG, "station:"MACSTR" join, AID=%d", MAC2STR(event->event_info.sta_connected.mac), event->event_info.sta_connected.aid);
-            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            display_portal_url();
-            break;
-        }
-
-        case SYSTEM_EVENT_AP_STADISCONNECTED: {
-            ESP_LOGI(TAG, "station:"MACSTR" leave, AID=%d", MAC2STR(event->event_info.sta_disconnected.mac), event->event_info.sta_disconnected.aid);
-            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            display_wifi_conn();
-            break;
-        }
-
-        default:
-            break;
-    }
-    return ESP_OK;
+static void
+sta_start_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    esp_wifi_connect();
 }
 
+static void
+sta_got_ip_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
+
+    ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
+    xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+}
+
+static void
+sta_disconnected_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    const wifi_event_sta_disconnected_t *event = (const wifi_event_sta_disconnected_t *)event_data;
+    ESP_LOGE(TAG, "Disconnect reason : %d", event->reason);
+    if (event->reason == WIFI_REASON_CONNECTION_FAIL) {
+        esp_wifi_set_protocol(ESP_IF_WIFI_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N); // switch to 802.11 bgn mode
+    }
+    esp_wifi_connect();
+    xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+}
+
+static void
+ap_start_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    tcpip_adapter_ip_info_t ap_info;
+    char str_ip[16], str_netmask[16], str_gw[16];
+
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info);
+    ip4addr_ntoa_r(&ap_info.ip, str_ip, sizeof(str_ip));
+    ip4addr_ntoa_r(&ap_info.netmask, str_netmask, sizeof(str_netmask));
+    ip4addr_ntoa_r(&ap_info.gw, str_gw, sizeof(str_gw));
+    ESP_LOGI(TAG, "AP started; ip=%s, netmask=%s, gw=%s", str_ip, str_netmask, str_gw);
+    display_wifi_conn();
+    if (https_server == NULL) {
+        https_server = start_webserver();
+    }
+}
+
+static void
+ap_staconnected_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    const wifi_event_ap_staconnected_t *event = (const wifi_event_ap_staconnected_t *)event_data;
+
+    ESP_LOGI(TAG, "station:"MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
+    xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    display_portal_url();
+}
+
+
+static void
+ap_stadisconnected_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    const wifi_event_ap_stadisconnected_t *event = (const wifi_event_ap_stadisconnected_t *)event_data;
+    ESP_LOGI(TAG, "station:"MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
+    xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    display_wifi_conn();
+}
+
+
+/******************************************************************************
+ * Wifi init
+ */
 
 void
 wifi_init_sta() {
@@ -300,6 +316,10 @@ wifi_init_ap() {
 }
 
 
+/******************************************************************************
+ * Main entry point
+ */
+
 void
 app_main()
 {
@@ -317,9 +337,21 @@ app_main()
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
     ssd1306_init(SSD1306_I2C, 23, 22);
 
+
     wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // event_data formats: $IDF_PATH/components/esp_wifi/include/esp_wifi_types.h
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, &sta_start_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &sta_got_ip_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &sta_disconnected_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &ap_start_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED, &ap_staconnected_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, &ap_stadisconnected_handler, NULL));
 
     tcpip_adapter_init();
     {
@@ -332,7 +364,6 @@ app_main()
         ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info));
         ESP_ERROR_CHECK(tcpip_adapter_dhcps_start(TCPIP_ADAPTER_IF_AP));
     }
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
 
     //wifi_init_sta();
     wifi_init_ap();
