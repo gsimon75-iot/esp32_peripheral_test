@@ -188,20 +188,28 @@ start_webserver(void) {
     httpd_handle_t server = NULL;
 
     ESP_LOGI(TAG, "Starting https server;");
-
+#if 1
     httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
+    //conf.httpd = HTTPD_DEFAULT_CONFIG();
     conf.cacert_pem = server_crt_start;
     conf.cacert_len = server_crt_end - server_crt_start;
     conf.prvtkey_pem = private_key_start;
     conf.prvtkey_len = private_key_end - private_key_start;
-
+    //conf.transport_mode = HTTPD_SSL_TRANSPORT_INSECURE;
+    //conf.port_secure = 443;
+    //conf.port_insecure = 80;
     esp_err_t ret = httpd_ssl_start(&server, &conf);
+#else
+    httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
+    esp_err_t ret = httpd_start(&server, &conf);
+#endif
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error starting server; status=%d", ret);
         return NULL;
     }
 
     httpd_register_uri_handler(server, &root);
+    ESP_LOGI(TAG, "Started https server;");
     return server;
 }
 
@@ -223,6 +231,10 @@ sta_got_ip_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
 
     ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    if (https_server == NULL) {
+        https_server = start_webserver();
+    }
+    display_portal_url();
 }
 
 static void
@@ -303,7 +315,7 @@ wifi_init_ap() {
             .ssid = AP_SSID,
             .ssid_len = strlen(AP_SSID),
             .password = AP_PASSWORD,
-            .max_connection = 1,
+            .max_connection = 10,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },
     };
@@ -343,6 +355,18 @@ app_main()
 
     wifi_event_group = xEventGroupCreate();
 
+    tcpip_adapter_init();
+    {
+        tcpip_adapter_ip_info_t ap_info = {
+            .ip =       { .addr = 0x0100000aUL },  // 10.0.0.1
+            .netmask =  { .addr = 0x000000ffUL },  // 255.0.0.0
+            .gw =       { .addr = 0x0100000aUL },  // 10.0.0.1
+        };
+        ESP_ERROR_CHECK(tcpip_adapter_dhcps_stop(TCPIP_ADAPTER_IF_AP));
+        ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info));
+        ESP_ERROR_CHECK(tcpip_adapter_dhcps_start(TCPIP_ADAPTER_IF_AP));
+    }
+
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // event_data formats: $IDF_PATH/components/esp_wifi/include/esp_wifi_types.h
@@ -351,28 +375,15 @@ app_main()
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &sta_disconnected_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &ap_start_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED, &ap_staconnected_handler, NULL));
+    // SYSTEM_EVENT_AP_STAIPASSIGNED
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, &ap_stadisconnected_handler, NULL));
-
-    tcpip_adapter_init();
-    {
-        tcpip_adapter_ip_info_t ap_info = {
-            .ip = { .addr = 0x0100000aUL },         // 10.0.0.1
-            .netmask = { . addr = IP_CLASSA_NET },  // 255.0.0.0
-            .gw = { .addr = IPADDR_NONE },
-        };
-        ESP_ERROR_CHECK(tcpip_adapter_dhcps_stop(TCPIP_ADAPTER_IF_AP));
-        ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info));
-        ESP_ERROR_CHECK(tcpip_adapter_dhcps_start(TCPIP_ADAPTER_IF_AP));
-    }
 
     //wifi_init_sta();
     wifi_init_ap();
 
     /*for (int i = 10; i >= 0; i--) {
-    ESP_LOGD(TAG, "Restarting in %d seconds...\n", i);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    ESP_LOGI(TAG, "Restarting now.\n");
     fflush(stdout);
     esp_restart(); */
 }
