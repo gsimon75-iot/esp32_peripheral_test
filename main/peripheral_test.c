@@ -2,6 +2,7 @@
 #include "ssd1306.h"
 #include "qrcodegen.h"
 #include "font6x8.h"
+#include "dns_server.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -163,6 +164,35 @@ display_portal_url(void) {
 
 
 /******************************************************************************
+ * DNS Server details
+ */
+
+static bool
+dns_policy(dns_buf_t *out, const char *name, dns_type_t type, dns_class_t _class, uint32_t *ttl) {
+    if (_class != DNS_CLASS_IN)
+        return false;
+
+    switch (type) {
+        case DNS_TYPE_A: {
+            // name: "www.google.com."
+            *ttl = 180;
+            dns_write_u32n(out, 0x0a000001); // rdata
+            return true;
+        }
+
+        case DNS_TYPE_PTR: {
+            // name = "192.168.1.1.in-addr.arpa."
+            *ttl = 180;
+            dns_write_dns_name(out, "www.yadda.boo"); // rdata
+            return true;
+        }
+
+        default:
+            return false;
+    }
+}
+
+/******************************************************************************
  * HTTPS Server details
  */
 
@@ -262,6 +292,7 @@ ap_start_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void*
     if (https_server == NULL) {
         https_server = start_webserver();
     }
+    dns_server_start(dns_policy);
 }
 
 static void
@@ -315,7 +346,7 @@ wifi_init_ap() {
             .ssid = AP_SSID,
             .ssid_len = strlen(AP_SSID),
             .password = AP_PASSWORD,
-            .max_connection = 10,
+            .max_connection = 4,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },
     };
@@ -358,9 +389,13 @@ app_main()
     tcpip_adapter_init();
     {
         tcpip_adapter_ip_info_t ap_info = {
-            .ip =       { .addr = 0x0100000aUL },  // 10.0.0.1
+            /*.ip =       { .addr = 0x0100000aUL },  // 10.0.0.1
             .netmask =  { .addr = 0x000000ffUL },  // 255.0.0.0
             .gw =       { .addr = 0x0100000aUL },  // 10.0.0.1
+            */
+            .ip =       { .addr = htonl(0x0a000001) },  // 10.0.0.1
+            .netmask =  { .addr = htonl(0xff000000) },  // 255.0.0.0
+            .gw =       { .addr = htonl(0x0a000001) },  // 10.0.0.1
         };
         ESP_ERROR_CHECK(tcpip_adapter_dhcps_stop(TCPIP_ADAPTER_IF_AP));
         ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info));
