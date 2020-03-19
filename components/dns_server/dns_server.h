@@ -10,45 +10,6 @@
 #include <lwip/netdb.h>
 
 typedef enum {
-    DNS_FLAG_IS_RESPONSE        = 0x8000,
-    DNS_FLAG_OPCODE_MASK        = 0x7800,
-    DNS_FLAG_IS_AUTHORITATIVE   = 0x0400,
-    DNS_FLAG_IS_TRUNCATED       = 0x0200,
-    DNS_FLAG_WANT_RECURSION     = 0x0100,
-    DNS_FLAG_CAN_RECURSION      = 0x0080,
-    DNS_FLAG_IS_AUTHENTICATED   = 0x0020,
-    DNS_FLAG_CHECKING_DISABLED  = 0x0010,
-    DNS_FLAG_RETCODE_MASK       = 0x000f,
-} dns_flags_t;
-#define DNS_FLAG_OPCODE_SHIFT   11
-#define DNS_FLAG_RETCODE_SHIFT  0
-
-
-typedef enum {
-    DNS_OPCODE_QUERY    = 0 << DNS_FLAG_OPCODE_SHIFT,
-    DNS_OPCODE_IQUERY   = 1 << DNS_FLAG_OPCODE_SHIFT,
-    DNS_OPCODE_STATUS   = 2 << DNS_FLAG_OPCODE_SHIFT,
-    DNS_OPCODE_NOTIFY   = 4 << DNS_FLAG_OPCODE_SHIFT,
-    DNS_OPCODE_UPDATE   = 5 << DNS_FLAG_OPCODE_SHIFT,
-} dns_opcode_t;
-
-
-typedef enum {
-    DNS_RETCODE_NO_ERROR        = 0 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_FORMAT_ERROR    = 1 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_SERVER_FAILURE  = 2 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_NAME_ERROR      = 3 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_NOT_IMPLEMENTED = 4 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_REFUSED         = 5 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_YXDOMAIN        = 6 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_YXRRSET         = 7 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_NXRRSET         = 8 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_NOT_AUTH        = 9 << DNS_FLAG_RETCODE_SHIFT,
-    DNS_RETCODE_NOT_ZONE        = 10 << DNS_FLAG_RETCODE_SHIFT,
-} dns_retcode_t;
-
-
-typedef enum {
     DNS_TYPE_A          = 1,
     DNS_TYPE_NS         = 2,
     DNS_TYPE_MD         = 3,
@@ -125,54 +86,20 @@ typedef enum {
 } dns_type_t;
 
 
-typedef enum {
-    DNS_CLASS_IN        = 1,
-    DNS_CLASS_CH        = 3,
-    DNS_CLASS_HS        = 4,
-    DNS_CLASS_NONE      = 254,
-    DNS_CLASS_ANY       = 255,
-} dns_class_t;
+void dns_write_u8(uint8_t **dst, uint8_t src);
+void dns_write_u8s(uint8_t **dst, const uint8_t *src, size_t src_length);
 
+void dns_write_u16n(uint8_t **dst, uint16_t src);
+void dns_write_u16le(uint8_t **dst, uint16_t src);
+void dns_write_u16be(uint8_t **dst, uint16_t src);
 
-typedef struct {
-    uint8_t *data;
-    size_t rdpos;
-    size_t wrpos;
-    size_t alloc_length;
-    bool owns_data;
-} dns_buf_t;
+void dns_write_u32n(uint8_t **dst, uint32_t src);
+void dns_write_u32le(uint8_t **dst, uint32_t src);
+void dns_write_u32be(uint8_t **dst, uint32_t src);
 
-void dns_buf_init_alloc(dns_buf_t *self, size_t alloc_length);
-void dns_buf_init_use_data(dns_buf_t *self, uint8_t *data, size_t data_length);
-void dns_buf_init_use_buffer(dns_buf_t *self, uint8_t *data, size_t data_length);
-void dns_buf_log(dns_buf_t *self, const char *prefix);
-void dns_buf_grow(dns_buf_t *self, size_t additional_bytes);
-size_t dns_buf_available(dns_buf_t *self);
-void dns_buf_destroy(dns_buf_t *self);
+void dns_write_name(uint8_t **dst, const char *src);
 
-bool dns_parse_u8(dns_buf_t *self, uint8_t *dest);
-void dns_write_u8(dns_buf_t *self, uint8_t src);
-void dns_write_u8s(dns_buf_t *self, const uint8_t *src, size_t src_length);
-
-bool dns_parse_u16n(dns_buf_t *self, uint16_t *dest);
-bool dns_parse_u16le(dns_buf_t *self, uint16_t *dest);
-bool dns_parse_u16be(dns_buf_t *self, uint16_t *dest);
-void dns_write_u16n(dns_buf_t *self, uint16_t src);
-void dns_write_u16le(dns_buf_t *self, uint16_t src);
-void dns_write_u16be(dns_buf_t *self, uint16_t src);
-
-bool dns_parse_u32n(dns_buf_t *self, uint32_t *dest);
-bool dns_parse_u32le(dns_buf_t *self, uint32_t *dest);
-bool dns_parse_u32be(dns_buf_t *self, uint32_t *dest);
-void dns_write_u32n(dns_buf_t *self, uint32_t src);
-void dns_write_u32le(dns_buf_t *self, uint32_t src);
-void dns_write_u32be(dns_buf_t *self, uint32_t src);
-
-bool dns_parse_dns_name(dns_buf_t *self, dns_buf_t* dest);
-void dns_write_dns_name(dns_buf_t* self, const char *src);
-
-
-typedef bool (*dns_policy_t)(dns_buf_t *out, const char *name, dns_type_t type, dns_class_t _class, uint32_t *ttl);
+typedef bool (*dns_policy_t)(uint8_t **dst, const char *name, dns_type_t type, uint32_t *ttl);
 
 esp_err_t dns_server_start(dns_policy_t fn);
 

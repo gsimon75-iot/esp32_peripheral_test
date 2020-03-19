@@ -168,22 +168,19 @@ display_portal_url(void) {
  */
 
 static bool
-dns_policy(dns_buf_t *out, const char *name, dns_type_t type, dns_class_t _class, uint32_t *ttl) {
-    if (_class != DNS_CLASS_IN)
-        return false;
-
+dns_policy(uint8_t **dst, const char *name, dns_type_t type, uint32_t *ttl) {
     switch (type) {
         case DNS_TYPE_A: {
             // name: "www.google.com."
             *ttl = 180;
-            dns_write_u32n(out, 0x0a000001); // rdata
+            dns_write_u32n(dst, 0x0a000001); // rdata
             return true;
         }
 
         case DNS_TYPE_PTR: {
             // name = "192.168.1.1.in-addr.arpa."
             *ttl = 180;
-            dns_write_dns_name(out, "www.yadda.boo"); // rdata
+            dns_write_name(dst, "www.yadda.boo"); // rdata
             return true;
         }
 
@@ -197,53 +194,84 @@ dns_policy(dns_buf_t *out, const char *name, dns_type_t type, dns_class_t _class
  */
 
 static esp_err_t
-root_get_handler(httpd_req_t *req) {
-    ESP_LOGD(TAG, "root_get_handler;");
+https_root_get_handler(httpd_req_t *req) {
+    ESP_LOGD(TAG, "https %d %s", req->method, req->uri);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, "<h1>Hello Secure World!</h1>", -1); // -1 = use strlen()
     return ESP_OK;
 }
 
+static esp_err_t
+http_root_get_handler(httpd_req_t *req) {
+    ESP_LOGD(TAG, "http %d %s", req->method, req->uri);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, "<h1>Hello World!</h1>", -1); // -1 = use strlen()
+    return ESP_OK;
+}
+
 
 static const
-httpd_uri_t root = {
+httpd_uri_t https_root = {
     .uri       = "/",
     .method    = HTTP_GET,
-    .handler   = root_get_handler
+    .handler   = https_root_get_handler
+};
+
+
+static const
+httpd_uri_t http_root = {
+    .uri       = "/",
+    .method    = HTTP_GET,
+    .handler   = http_root_get_handler
 };
 
 
 static httpd_handle_t
-start_webserver(void) {
+start_https_server(void) {
     httpd_handle_t server = NULL;
 
     ESP_LOGI(TAG, "Starting https server;");
-#if 1
     httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
     //conf.httpd = HTTPD_DEFAULT_CONFIG();
     conf.cacert_pem = server_crt_start;
     conf.cacert_len = server_crt_end - server_crt_start;
     conf.prvtkey_pem = private_key_start;
     conf.prvtkey_len = private_key_end - private_key_start;
+    conf.httpd.ctrl_port = 50443;
     //conf.transport_mode = HTTPD_SSL_TRANSPORT_INSECURE;
     //conf.port_secure = 443;
     //conf.port_insecure = 80;
     esp_err_t ret = httpd_ssl_start(&server, &conf);
-#else
-    httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
-    esp_err_t ret = httpd_start(&server, &conf);
-#endif
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error starting server; status=%d", ret);
         return NULL;
     }
 
-    httpd_register_uri_handler(server, &root);
+    httpd_register_uri_handler(server, &https_root);
+    ESP_LOGI(TAG, "Started https server;");
+    return server;
+}
+
+static httpd_handle_t
+start_http_server(void) {
+    httpd_handle_t server = NULL;
+
+    ESP_LOGI(TAG, "Starting http server;");
+    httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
+    conf.ctrl_port = 50080;
+    esp_err_t ret = httpd_start(&server, &conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error starting server; status=%d", ret);
+        return NULL;
+    }
+
+    httpd_register_uri_handler(server, &http_root);
     ESP_LOGI(TAG, "Started https server;");
     return server;
 }
 
 httpd_handle_t* https_server = NULL;
+httpd_handle_t* http_server = NULL;
 
 
 /*******************************************************************************
@@ -262,7 +290,7 @@ sta_got_ip_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
     ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     if (https_server == NULL) {
-        https_server = start_webserver();
+        https_server = start_https_server();
     }
     display_portal_url();
 }
@@ -290,7 +318,10 @@ ap_start_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void*
     ESP_LOGI(TAG, "AP started; ip=%s, netmask=%s, gw=%s", str_ip, str_netmask, str_gw);
     display_wifi_conn();
     if (https_server == NULL) {
-        https_server = start_webserver();
+        https_server = start_https_server();
+    }
+    if (http_server == NULL) {
+        http_server = start_http_server();
     }
     dns_server_start(dns_policy);
 }
