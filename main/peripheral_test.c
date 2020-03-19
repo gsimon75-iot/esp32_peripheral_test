@@ -194,21 +194,20 @@ dns_policy(uint8_t **dst, const char *name, dns_type_t type, uint32_t *ttl) {
  */
 
 static esp_err_t
+http_generate_204_handler(httpd_req_t *req) {
+    ESP_LOGD(TAG, "/generate_204");
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t
 https_root_get_handler(httpd_req_t *req) {
     ESP_LOGD(TAG, "https %d %s", req->method, req->uri);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, "<h1>Hello Secure World!</h1>", -1); // -1 = use strlen()
     return ESP_OK;
 }
-
-static esp_err_t
-http_root_get_handler(httpd_req_t *req) {
-    ESP_LOGD(TAG, "http %d %s", req->method, req->uri);
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, "<h1>Hello World!</h1>", -1); // -1 = use strlen()
-    return ESP_OK;
-}
-
 
 static const
 httpd_uri_t https_root = {
@@ -219,10 +218,10 @@ httpd_uri_t https_root = {
 
 
 static const
-httpd_uri_t http_root = {
-    .uri       = "/",
+httpd_uri_t http_generate_204 = {
+    .uri       = "/generate_204",
     .method    = HTTP_GET,
-    .handler   = http_root_get_handler
+    .handler   = http_generate_204_handler
 };
 
 
@@ -265,7 +264,7 @@ start_http_server(void) {
         return NULL;
     }
 
-    httpd_register_uri_handler(server, &http_root);
+    httpd_register_uri_handler(server, &http_generate_204);
     ESP_LOGI(TAG, "Started https server;");
     return server;
 }
