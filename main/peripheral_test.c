@@ -25,7 +25,12 @@
 
 #define SSD1306_I2C I2C_NUM_1
 
+#ifndef CERT_SUBJECT
+#   define CERT_SUBJECT "ptest.local"
+#endif
+
 static const char *TAG = "ptest";
+static const char *SERVER_NAME = CERT_SUBJECT;
 
 extern const uint8_t private_key_start[] asm("_binary_private_key_start");
 extern const uint8_t private_key_end[] asm("_binary_private_key_end");
@@ -139,24 +144,26 @@ display_wifi_conn(void) {
 
 void
 display_portal_url(void) {
-    char str_ip[16];
 
     ssd1306_clear(SSD1306_I2C);
     ssd1306_send_cmd_byte(SSD1306_I2C, SSD1306_DISPLAY_INVERSE);
 
+    /*char str_ip[16];
     {
         tcpip_adapter_ip_info_t ap_info;
         tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_info);
         ip4addr_ntoa_r(&ap_info.ip, str_ip, sizeof(str_ip));
-    }
+    }*/
 
     lcd_puts(8, 0, "https://");
-    lcd_puts(8, 1, str_ip);
+    //lcd_puts(8, 1, str_ip);
+    lcd_puts(8, 1, SERVER_NAME);
 
     {
         // Encoding URLs on QR-Code: https://github.com/zxing/zxing/wiki/Barcode-Contents#url
         uint8_t tempBuffer[WIFI_QR_SIZE];
-        size_t input_length = snprintf((char*)tempBuffer, sizeof(tempBuffer), "https://%s", str_ip);
+        //size_t input_length = snprintf((char*)tempBuffer, sizeof(tempBuffer), "https://%s", str_ip);
+        size_t input_length = snprintf((char*)tempBuffer, sizeof(tempBuffer), "URL:https://%s", SERVER_NAME);
         lcd_QR(tempBuffer, input_length);
     }
 
@@ -180,7 +187,7 @@ dns_policy(uint8_t **dst, const char *name, dns_type_t type, uint32_t *ttl) {
         case DNS_TYPE_PTR: {
             // name = "192.168.1.1.in-addr.arpa."
             *ttl = 180;
-            dns_write_name(dst, "www.yadda.boo"); // rdata
+            dns_write_name(dst, SERVER_NAME); // rdata
             return true;
         }
 
@@ -215,7 +222,6 @@ httpd_uri_t https_root = {
     .method    = HTTP_GET,
     .handler   = https_root_get_handler
 };
-
 
 static const
 httpd_uri_t http_generate_204 = {
@@ -412,7 +418,6 @@ app_main()
     ESP_ERROR_CHECK(ret);
 
     ssd1306_init(SSD1306_I2C, 23, 22);
-
 
     wifi_event_group = xEventGroupCreate();
 
