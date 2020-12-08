@@ -17,13 +17,14 @@
 #include <esp_https_server.h>
 
 #include <nvs_flash.h>
-
 #include <driver/i2c.h>
+#include <driver/touch_pad.h>
 
 #include <stdio.h>
 #include <string.h>
 
 #define SSD1306_I2C I2C_NUM_1
+#define BUTTON_TP_PIN 6
 
 #ifndef CERT_SUBJECT
 #   define CERT_SUBJECT "ptest.local"
@@ -42,6 +43,7 @@ static EventGroupHandle_t wifi_event_group;
 
 // The event group allows multiple bits for each event, but we only care about one event - are we connected to the AP with an IP?
 const int WIFI_CONNECTED_BIT = BIT0;
+const int BUTTON_BIT = BIT1;
 
 // QR-Code versions, sizes and information capacity: https://www.qrcode.com/en/about/version.html
 // Version 3 = 29 x 29, binary info cap by ecc mode: L:53, M:42, Q:32 bytes
@@ -396,8 +398,53 @@ wifi_init_ap() {
 
 
 /******************************************************************************
+ * Touch sensor handling
+ */
+
+
+static void
+tp_example_read_task(void *pvParameter)
+{
+    while (1) {
+        uint16_t touch_value, touch_filter_value;
+
+        touch_pad_read_raw_data(BUTTON_TP_PIN, &touch_value);
+        touch_pad_read_filtered(BUTTON_TP_PIN, &touch_filter_value);
+        ESP_LOGI(TAG, "T%d:[%4d,%4d]", tp, touch_value, touch_filter_value);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+    }
+}
+
+
+static void
+tp_example_rtc_intr(void * arg)
+{
+    uint32_t status = touch_pad_get_status();
+    touch_pad_clear_status();
+    if (status & (1 << BUTTON_TP_PIN)) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xEventGroupSetBitsFromISR(wifi_event_group, BUTTON_BIT, &xHigherPriorityTaskWoken);
+    }
+    else {
+        xEventGroupClearBitsFromISR(wifi_event_group, BUTTON_BIT);
+    }
+}
+
+static void
+touchpad_wait_task(void *pvParameter)
+{
+    while (1) {
+        ESP_LOGD(TAG, "touchpad wait;");
+        EventBits_t buttons = xEventGroupWaitBits(wifi_event_group, BUTTON_BIT,  pdTRUE, pdFALSE, -1);
+        ESP_LOGD(TAG, "touchpad changed; status=0x%08x\n", buttons);
+    }
+}
+
+
+/******************************************************************************
  * Main entry point
  */
+
 
 void
 app_main()
@@ -450,6 +497,26 @@ app_main()
 
     //wifi_init_sta();
     wifi_init_ap();
+
+    touch_pad_init();
+    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
+    touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V5);
+    touch_pad_config(BUTTON_TP_PIN, 0);
+    touch_pad_filter_start(50);
+    {
+        uint16_t value, threshold;
+
+        touch_pad_read_filtered(BUTTON_TP_PIN, &value);
+        threshold = value * 9 / 10;
+        ESP_LOGD(TAG, "touchpad read; value=%d, threshold=%d", value, threshold);
+        ESP_ERROR_CHECK(touch_pad_set_thresh(BUTTON_TP_PIN, threshold));
+    }
+
+    //xTaskCreate(&touchpad_wait_task, "touchpad_wait_task", 2048, NULL, 5, NULL);
+    //touch_pad_isr_register(tp_example_rtc_intr, NULL);
+    //touch_pad_intr_enable();
+
+    xTaskCreate(&tp_example_read_task, "touch_pad_read_task", 2048, NULL, 5, NULL);
 
     /*for (int i = 10; i >= 0; i--) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
